@@ -1,0 +1,13 @@
+node_modules
+.env
+.env.local
+src/generated
+.next
+dist
+build
+*.log
+test-results
+playwright-report
+tsconfig.tsbuildinfo
+uploads
+.mail-outbox.log

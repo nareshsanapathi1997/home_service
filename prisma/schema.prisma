@@ -1,0 +1,506 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  TECHNICIAN
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  REJECTED
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  REJECTED
+  QUOTE_PENDING
+  QUOTE_ACCEPTED
+  IN_PROGRESS
+  AWAITING_CUSTOMER_CONFIRMATION
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum QuoteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  REFUNDED
+  PARTIAL
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  DISMISSED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ReconciliationStatus {
+  PENDING
+  RECONCILED
+  DISPUTED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String
+  email         String        @unique
+  phone         String?
+  passwordHash  String?
+  role          Role          @default(CUSTOMER)
+  accountStatus AccountStatus @default(ACTIVE)
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  lastLoginAt   DateTime?
+
+  // Relations
+  technicianProfile   TechnicianProfile?
+  customerBookings    Booking[]            @relation("CustomerBookings")
+  reviews             Review[]             @relation("CustomerReviews")
+  complaints          Complaint[]          @relation("ComplaintReporter")
+  notifications       Notification[]
+  adminActions        AdminAuditLog[]      @relation("AdminActions")
+  assignedComplaints  Complaint[]          @relation("ComplaintAssignee")
+  accounts            Account[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @id
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model ServiceCategory {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  description   String?
+  iconKey       String?
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  indicativeMin Decimal? @db.Decimal(10, 2)
+  indicativeMax Decimal? @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  technicianServices TechnicianService[]
+  bookings           Booking[]
+}
+
+model ServiceArea {
+  id        String   @id @default(cuid())
+  city      String
+  locality  String
+  pincode   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  technicianServiceAreas TechnicianServiceArea[]
+  bookings               Booking[]
+
+  @@unique([city, locality])
+}
+
+model TechnicianProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  bio                String?            @db.Text
+  experienceYears    Int                @default(0)
+  profileImageUrl    String?            @db.Text
+  applicationStatus  VerificationStatus @default(PENDING)
+  verificationStatus VerificationStatus @default(PENDING)
+  adminNotes         String?            @db.Text
+  approvedById       String?
+  approvedAt         DateTime?
+  rejectionReason    String?            @db.Text
+  rejectedAt         DateTime?
+  suspendedAt        DateTime?
+  suspensionReason   String?            @db.Text
+  isVerified         Boolean            @default(false)
+  ratingAverage      Decimal?           @db.Decimal(3, 2)
+  ratingCount        Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user                     User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  technicianServices       TechnicianService[]
+  technicianServiceAreas   TechnicianServiceArea[]
+  technicianAvailabilities TechnicianAvailability[]
+  verificationDocuments    TechnicianVerificationDocument[]
+  technicianBookings       Booking[]                        @relation("TechnicianBookings")
+  quotes                   Quote[]
+  reviews                  Review[]
+  commissionRecords        CommissionRecord[]
+
+  @@index([verificationStatus, applicationStatus])
+  @@index([ratingAverage])
+}
+
+model TechnicianService {
+  id           String   @id @default(cuid())
+  technicianId String
+  categoryId   String
+  visitFee     Decimal? @db.Decimal(10, 2)
+  labourMin    Decimal? @db.Decimal(10, 2)
+  labourMax    Decimal? @db.Decimal(10, 2)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  category   ServiceCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([technicianId, categoryId])
+  @@index([technicianId])
+  @@index([categoryId])
+}
+
+model TechnicianServiceArea {
+  id           String   @id @default(cuid())
+  technicianId String
+  areaId       String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  area       ServiceArea       @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@unique([technicianId, areaId])
+  @@index([technicianId])
+  @@index([areaId])
+}
+
+model TechnicianAvailability {
+  id           String   @id @default(cuid())
+  technicianId String
+  dayOfWeek    Int
+  startTime    String
+  endTime      String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@index([technicianId, dayOfWeek])
+}
+
+model TechnicianVerificationDocument {
+  id           String    @id @default(cuid())
+  technicianId String
+  documentType String
+  documentUrl  String    @db.Text
+  fileName     String?
+  fileSize     Int?
+  mimeType     String?
+  uploadedAt   DateTime  @default(now())
+  verifiedAt   DateTime?
+  verifiedBy   String?
+  notes        String?   @db.Text
+
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@index([technicianId])
+}
+
+model Booking {
+  id                             String               @id @default(cuid())
+  bookingReference               String               @unique
+  customerId                     String
+  technicianId                   String
+  categoryId                     String
+  serviceAreaId                  String
+  preferredDate                  DateTime
+  preferredTime                  String
+  serviceAddress                 String               @db.Text
+  locality                       String
+  problemDescription             String               @db.Text
+  imageUrl                       String?              @db.Text
+  status                         BookingStatus        @default(REQUESTED)
+  cancellationReason             String?              @db.Text
+  cancelledBy                    String?
+  cancelledAt                    DateTime?
+  finalServiceAmount             Decimal?             @db.Decimal(10, 2)
+  customerPaymentStatus          PaymentStatus        @default(UNPAID)
+  paymentMethod                  String?
+  paymentReference               String?
+  paymentOrderId                 String?
+  paymentNotes                   String?              @db.Text
+  commissionRateSnapshot         Decimal              @default(0.12) @db.Decimal(5, 4)
+  commissionAmount               Decimal?             @db.Decimal(10, 2)
+  commissionReconciliationStatus ReconciliationStatus @default(PENDING)
+  commissionReconciledAt         DateTime?
+  commissionReconciledBy         String?
+  startedAt                      DateTime?
+  completedAt                    DateTime?
+  confirmedByCustomerAt          DateTime?
+  disputedAt                     DateTime?
+  disputeReason                  String?              @db.Text
+  createdAt                      DateTime             @default(now())
+  updatedAt                      DateTime             @updatedAt
+
+  customer         User              @relation("CustomerBookings", fields: [customerId], references: [id])
+  technician       TechnicianProfile @relation("TechnicianBookings", fields: [technicianId], references: [id])
+  category         ServiceCategory   @relation(fields: [categoryId], references: [id])
+  serviceArea      ServiceArea       @relation(fields: [serviceAreaId], references: [id])
+  bookingEvents    BookingEvent[]
+  quotes           Quote[]
+  reviews          Review[]
+  complaints       Complaint[]
+  commissionRecord CommissionRecord?
+
+  @@index([customerId, createdAt])
+  @@index([technicianId, createdAt])
+  @@index([technicianId, preferredDate])
+  @@index([status, createdAt])
+  @@index([serviceAreaId])
+  @@index([categoryId])
+}
+
+model BookingEvent {
+  id            String         @id @default(cuid())
+  bookingId     String
+  actorId       String?
+  previousState BookingStatus?
+  newState      BookingStatus
+  timestamp     DateTime       @default(now())
+  reason        String?        @db.Text
+  metadata      Json?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, timestamp])
+}
+
+model Quote {
+  id            String      @id @default(cuid())
+  bookingId     String
+  technicianId  String
+  version       Int         @default(1)
+  status        QuoteStatus @default(PENDING)
+  visitFee      Decimal     @default(0) @db.Decimal(10, 2)
+  labourAmount  Decimal     @default(0) @db.Decimal(10, 2)
+  partsAmount   Decimal     @default(0) @db.Decimal(10, 2)
+  otherCharges  Decimal     @default(0) @db.Decimal(10, 2)
+  subtotal      Decimal     @db.Decimal(10, 2)
+  taxAmount     Decimal     @default(0) @db.Decimal(10, 2)
+  totalAmount   Decimal     @db.Decimal(10, 2)
+  notes         String?     @db.Text
+  customerNotes String?     @db.Text
+  validUntil    DateTime?
+  sentAt        DateTime    @default(now())
+  respondedAt   DateTime?
+  approvedAt    DateTime?
+  rejectedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  booking    Booking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id])
+  quoteItems QuoteItem[]
+
+  @@index([bookingId, version])
+  @@index([status])
+}
+
+model QuoteItem {
+  id          String   @id @default(cuid())
+  quoteId     String
+  description String   @db.Text
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  lineTotal   Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+}
+
+model Review {
+  id              String    @id @default(cuid())
+  bookingId       String
+  customerId      String
+  technicianId    String
+  rating          Int
+  comment         String?   @db.Text
+  isModerated     Boolean   @default(false)
+  isHidden        Boolean   @default(false)
+  moderatedBy     String?
+  moderatedAt     DateTime?
+  moderationNotes String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  booking    Booking           @relation(fields: [bookingId], references: [id])
+  customer   User              @relation("CustomerReviews", fields: [customerId], references: [id])
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id])
+
+  @@unique([bookingId])
+  @@index([technicianId, rating])
+  @@index([rating])
+}
+
+model Complaint {
+  id            String          @id @default(cuid())
+  bookingId     String?
+  reporterId    String
+  complaintType String
+  description   String          @db.Text
+  status        ComplaintStatus @default(OPEN)
+  assignedToId  String?
+  assignedAt    DateTime?
+  resolution    String?         @db.Text
+  resolvedAt    DateTime?
+  resolvedBy    String?
+  closedAt      DateTime?
+  closedBy      String?
+  adminNotes    String?         @db.Text
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  booking  Booking? @relation(fields: [bookingId], references: [id])
+  reporter User     @relation("ComplaintReporter", fields: [reporterId], references: [id])
+  assignee User?    @relation("ComplaintAssignee", fields: [assignedToId], references: [id])
+
+  @@index([reporterId])
+  @@index([status])
+  @@index([assignedToId])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  recipientId String
+  type        String
+  title       String
+  message     String    @db.Text
+  relatedId   String?
+  relatedType String?
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  recipient User @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead, createdAt])
+  @@index([relatedType, relatedId])
+}
+
+model CommissionRecord {
+  id                   String               @id @default(cuid())
+  bookingId            String               @unique
+  technicianId         String
+  agreedRate           Decimal              @db.Decimal(5, 4)
+  amountDue            Decimal              @db.Decimal(10, 2)
+  amountPaid           Decimal              @default(0) @db.Decimal(10, 2)
+  reconciliationStatus ReconciliationStatus @default(PENDING)
+  reconciledAt         DateTime?
+  reconciledBy         String?
+  notes                String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  booking    Booking           @relation(fields: [bookingId], references: [id])
+  technician TechnicianProfile @relation(fields: [technicianId], references: [id])
+
+  @@index([technicianId, reconciliationStatus])
+  @@index([reconciliationStatus])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  recordType String
+  recordId   String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation("AdminActions", fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([recordType, recordId])
+}
